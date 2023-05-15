@@ -1,0 +1,3 @@
+lunge
+lunge_bad
+stand

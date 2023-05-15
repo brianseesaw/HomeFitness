@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">HomeFitness</string>
+    <string name="botnav_home">home</string>
+    <string name="botnav_browse">browse</string>
+    <string name="botnav_activity">activity</string>
+    <string name="botnav_profile">profile</string>
+    <string name="request_allow_permissions">please allow camera and audio access to use %s</string>
+
+</resources>
