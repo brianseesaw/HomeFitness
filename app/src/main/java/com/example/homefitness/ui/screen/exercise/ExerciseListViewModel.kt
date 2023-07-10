@@ -162,19 +162,20 @@ class ExerciseListViewModel(
                 .filterNotNull()
                 .first()
                 .let {
-                    planRepositoryImpl.deletePlan(it)
-                    exerciseRepositoryImpl.getExercisesByPlanStream(it.planId)
-                        .filterNotNull()
-                        .first()
-                        .forEach {
-                            exerciseRepositoryImpl.deleteExercise(it)
-                        }
-                    exerciseRunRepositoryImpl.getExerciseRunsByPlanStream(it.planId)
-                        .filterNotNull()
-                        .first()
-                        .forEach {
-                            exerciseRunRepositoryImpl.deleteExerciseRun(it)
-                        }
+//                    planRepositoryImpl.deletePlan(it)
+                    planRepositoryImpl.updatePlan(it.copy(planState = PlanState.DELETED))
+//                    exerciseRepositoryImpl.getExercisesByPlanStream(it.planId)
+//                        .filterNotNull()
+//                        .first()
+//                        .forEach {
+//                            exerciseRepositoryImpl.deleteExercise(it)
+//                        }
+//                    exerciseRunRepositoryImpl.getExerciseRunsByPlanStream(it.planId)
+//                        .filterNotNull()
+//                        .first()
+//                        .forEach {
+//                            exerciseRunRepositoryImpl.deleteExerciseRun(it)
+//                        }
                 }
         }.invokeOnCompletion {
             _deletePlanUiState.update { DeletePlanUiState.Deleted }

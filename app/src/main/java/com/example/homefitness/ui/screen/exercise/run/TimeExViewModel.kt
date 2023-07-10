@@ -165,7 +165,6 @@ class TimeExViewModel (
                 if (sound =="stop"){
                     _inExercise.update { false }
                     cancelTimer()
-                    updateExercise(TimeExUiState.Success)
                 }
             }else{
                 if (sound == "go"){
@@ -210,10 +209,18 @@ class TimeExViewModel (
     }
 
     fun endSet(){
-        _inExercise.update { false }
         stopAudioClassification()
-        alertPlayer.onPlayComplete {startAudioClassification()}
-        updateExercise(TimeExUiState.Success)
+        changeExerciseState("stop")
+        _repDone.update { repDone.value-(repDone.value % ex.value.rep) + (ex.value.rep - time.value.seconds.toInt())}
+        _time.update { Duration.ofSeconds(ex.value.rep.toLong())}
+        alertPlayer.onPlayComplete {
+            if(repDone.value >= ex.value.rep*ex.value.set){
+                finishExercise()
+            }else{
+                startAudioClassification()
+            }
+        }
+
     }
 
     fun updateExercise(completeState: TimeExUiState){
@@ -240,8 +247,10 @@ class TimeExViewModel (
         viewModelScope.launch{
             exerciseRepositoryImpl.getExercisesByPlanStream(run.value.planId)
                 .onStart {
-                    _timeExUiState.update { TimeExUiState.Saving }
+//                    alertPlayer.onPlayComplete {} // play complete sound
+                    stopAudioClassification()
                     freeRes()
+                    _timeExUiState.update { TimeExUiState.Saving }
                 }
                 .filterNotNull()
                 .first()
@@ -276,8 +285,7 @@ class TimeExViewModel (
     fun dismissPlanDoneDialog() = _timeExUiState.update { TimeExUiState.PlanDone } // dismiss plan done dialog and navigate back
     fun backDialog() {
         stopAudioClassification()
-        _inExercise.update { false }
-        cancelTimer()
+        changeExerciseState("stop")
         _timeExUiState.update { TimeExUiState.BackDialog }
     } // show back dialog
     fun confirmBackDialog() {
@@ -292,6 +300,7 @@ class TimeExViewModel (
         stopAudioClassification()
         cancelTimer()
     }
+
     override fun onCleared() {
         super.onCleared()
         freeRes()

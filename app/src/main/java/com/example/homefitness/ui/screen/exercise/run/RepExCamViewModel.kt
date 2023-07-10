@@ -88,7 +88,7 @@ class RepExCamViewModel(
     private val options = PoseDetectorOptions.Builder()
         .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
         .build()
-    private val poseDetector: PoseDetector
+    private var poseDetector: PoseDetector?
     private val poseClassificationExecutor = Executors.newSingleThreadExecutor()
     // pose detector end
 
@@ -115,7 +115,7 @@ class RepExCamViewModel(
         handler = HandlerCompat.createAsync(handlerThread.looper)
         getExercise()
         poseDetector = PoseDetection.getClient(options)
-        poseClassifier.setModel("pushup") // default model to pushup
+//        poseClassifier.setModel("pushup") // default model to pushup
 
         setSoundClassifierEnabled(true)
         initCamera()
@@ -157,10 +157,6 @@ class RepExCamViewModel(
         }
     }
 
-    fun setRepDone(value:Int){
-        _repDone.value = value
-    }
-
     fun setExerciseUiState(value: RepExDetectorUiState){
         _repExDetectorUiState.value = value
     }
@@ -199,7 +195,6 @@ class RepExCamViewModel(
     fun endSet(){
         stopAudioClassification()
         alertPlayer.onPlayComplete {startAudioClassification()}
-        updateExercise(RepExDetectorUiState.Success)
     }
 
     fun updateExercise(completeState: RepExDetectorUiState){
@@ -218,7 +213,6 @@ class RepExCamViewModel(
                 exerciseRunRepositoryImpl.updateExerciseRun(run.value) // update rep
             }.invokeOnCompletion {
                 _repExDetectorUiState.update { completeState }
-                _cameraUiState.update { CameraUiState.Ready() }
             }
         }
     }
@@ -227,8 +221,10 @@ class RepExCamViewModel(
         viewModelScope.launch{
             exerciseRepositoryImpl.getExercisesByPlanStream(run.value.planId)
                 .onStart {
-                    _repExDetectorUiState.update { RepExDetectorUiState.Saving }
+                    stopAudioClassification()
+                    alertPlayer.onPlayComplete {} // play sound
                     freeRes()
+                    _repExDetectorUiState.update { RepExDetectorUiState.Saving }
                 }
                 .filterNotNull()
                 .first()
@@ -273,8 +269,11 @@ class RepExCamViewModel(
             if (mediaImage != null) {
                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                 val startTime = System.currentTimeMillis()
-                poseDetector
-                    .process(inputImage)
+                if (poseDetector==null){
+                    poseDetector = PoseDetection.getClient(options)
+                }
+                poseDetector?.let {detector->
+                    detector.process(inputImage)
                     .continueWith(poseClassificationExecutor){ task->
                         val pose = task.result
                         val classificationResult: List<Category> =
@@ -288,8 +287,6 @@ class RepExCamViewModel(
                     .addOnSuccessListener { results ->
 
                         var poseType1: Category? = null
-                        var poseType2: Category? = null
-                        var poseType3: Category? = null
 
                         results.classificationResult
                             .filter { it.score > MINIMUM_CONFIDENCE_THRESHOLD } // filter list
@@ -308,16 +305,12 @@ class RepExCamViewModel(
                                         _isBadPose.update{false}
                                     }
                                 }
-                                list.elementAtOrNull(1)?.let{poseType2 = it}
-                                list.elementAtOrNull(2)?.let{poseType3 = it}
                             }
 
                         _cameraUiState.update {
                             CameraUiState.Ready(
                                 pose = results.pose,
                                 poseType1 = poseType1,
-                                poseType2 = poseType2,
-                                poseType3 = poseType3
                             )
                         }
 
@@ -327,12 +320,7 @@ class RepExCamViewModel(
                     }
                     .addOnFailureListener { ex ->
                         _cameraUiState.update {
-                            CameraUiState.Ready(
-                                pose = null,
-                                poseType1 = null,
-                                poseType2 = null,
-                                poseType3 = null
-                            )
+                            CameraUiState.Ready()
                         }
                         Log.e("analyzeImage",ex.message.toString())
                         imageProxy.close()
@@ -341,20 +329,22 @@ class RepExCamViewModel(
                         imageProxy.close()
                     }
                 }
+                if(poseDetector==null) imageProxy.close()
             }
+        }
     }
 
     fun detectedBad(){
         _isBadPose.update { true }
         if (!alertPlaying.value && // check if alert is already playing
-            System.currentTimeMillis() - alertTimeStamp.value > TimeUnit.SECONDS.toMillis(4) // check time passed since last alert
+            System.currentTimeMillis() - alertTimeStamp.value > TimeUnit.SECONDS.toMillis(3) // check time passed since last alert
         ){
             _alertPlaying.update{true}
             _alertTimeStamp.update { System.currentTimeMillis() }
             if (alertPlaying.value){
                 stopAudioClassification()
-                alertPlayer.onPlayError {
-                    _alertPlaying.update{false} // play alert
+                alertPlayer.onPlayError {// play alert
+                    _alertPlaying.update{false}
                     startAudioClassification()
                 }
             }
@@ -378,30 +368,30 @@ class RepExCamViewModel(
             record.startRecording()
 
             val run = object : Runnable {// Define the classification runnable
-            override fun run() {
-                val startTime = System.currentTimeMillis()
+                override fun run() {
+                    val startTime = System.currentTimeMillis()
 
-                audioTensor.load(record)// Load the latest audio sample
-                val output = classifier.classify(audioTensor)
+                    audioTensor.load(record)// Load the latest audio sample
+                    val output = classifier.classify(audioTensor)
 
-                val filteredModelOutput = output[0].categories.filter {// Filter classification result above threshold
-                    it.score > MINIMUM_CONFIDENCE_THRESHOLD
-                }.sortedByDescending { // sort result
-                    it.score
+                    val filteredModelOutput = output[0].categories.filter {// Filter classification result above threshold
+                        it.score > MINIMUM_CONFIDENCE_THRESHOLD
+                    }.sortedByDescending { // sort result
+                        it.score
+                    }
+
+                    filteredModelOutput.firstOrNull()?.let {
+                        togglePoseClassifier(it.label)
+                    }
+
+                    val finishTime = System.currentTimeMillis()
+                    Log.d("AUDIO CLASSIFY LATENCY", "Latency = ${finishTime - startTime} ms")
+
+                    _soundProbabilities.update { filteredModelOutput }
+
+                    // Rerun the classification after a certain interval
+                    handler.postDelayed(this, classificationInterval.value)
                 }
-
-                filteredModelOutput.firstOrNull()?.let {
-                    togglePoseClassifier(it.label)
-                }
-
-                val finishTime = System.currentTimeMillis()
-                Log.d("AUDIO CLASSIFY LATENCY", "Latency = ${finishTime - startTime} ms")
-
-                _soundProbabilities.update { filteredModelOutput }
-
-                // Rerun the classification after a certain interval
-                handler.postDelayed(this, classificationInterval.value)
-            }
             }
 
             handler.post(run) // Start the classification process
@@ -413,9 +403,11 @@ class RepExCamViewModel(
     fun togglePoseClassifier(label:String){
         if(label == "go") {
             _enablePoseClassifier.update { true }
+            poseClassifier.setModel(ex.value.name)
         }else if(label == "stop"){
             _enablePoseClassifier.update { false }
-            updateExercise(RepExDetectorUiState.Success)
+            poseClassifier.close()
+            _isBadPose.update { false }
         }
     }
 
@@ -432,7 +424,8 @@ class RepExCamViewModel(
     fun freeRes(){
         _cameraUiState.update { CameraUiState.Initial }
         Log.d("REPEXCAM VM FREE RES","VM CLEARED")
-        poseDetector.close()
+        poseDetector?.close()
+        poseDetector = null
         poseClassifier.close()
         stopAudioClassification()
 //        poseClassificationExecutor.shutdown();
@@ -440,13 +433,17 @@ class RepExCamViewModel(
 
     fun dismissPlanDoneDialog() = _repExDetectorUiState.update { RepExDetectorUiState.PlanDone } // dismiss plan done dialog and navigate back
     fun backDialog() {
-        stopAudioClassification()
-        _enablePoseClassifier.update { false }
         _cameraUiState.update { CameraUiState.Initial }
+        stopAudioClassification()
+        togglePoseClassifier("stop")
         _repExDetectorUiState.update { RepExDetectorUiState.BackDialog } // show back dialog
     }
     fun confirmBackDialog() {
-        updateExercise(RepExDetectorUiState.NavigateBack) // update exercise repdone and navigate back
+        viewModelScope.launch {
+            freeRes()
+        }.invokeOnCompletion {
+            updateExercise(RepExDetectorUiState.NavigateBack) // update exercise repdone and navigate back
+        }
     }
     fun dismissBackDialog() {
         startAudioClassification()

@@ -93,7 +93,6 @@ fun TimeExScreen(
             }
             TimeExUiState.NavigateBack -> {
                 LaunchedEffect(repExerciseUiState){
-                    viewModel.freeRes()
                     onBackToList()
                 }
             }

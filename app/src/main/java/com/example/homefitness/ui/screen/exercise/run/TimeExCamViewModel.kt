@@ -97,8 +97,11 @@ class TimeExCamViewModel  (
     private val options = PoseDetectorOptions.Builder()
         .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
         .build()
-    private val poseDetector: PoseDetector
+    private var poseDetector: PoseDetector?
     private val classificationExecutor = Executors.newSingleThreadExecutor()
+    private var _isLandscape = MutableStateFlow(false)
+    val isLandscape = _isLandscape.asStateFlow()
+
     // pose detector end
 
     init {
@@ -143,7 +146,7 @@ class TimeExCamViewModel  (
 
     fun setExercise(value: Exercise){
         _ex.value = value
-//        _landscape.update { ex.value.name in landscapeExercises }
+        _isLandscape.update { ex.value.name in landscapeExercises }
 
         if(ex.value.name in detectorExercises) poseClassifier.setModel(ex.value.name)
     }
@@ -216,15 +219,18 @@ class TimeExCamViewModel  (
     fun changeExerciseState(sound: String){
         if (inExercise.value){
             if (sound =="stop"){
+                cancelTimer()
                 _inExercise.update { false }
                 _enablePoseClassifier.update { false }
-                cancelTimer()
-                updateExercise(TimeExDetectorUiState.Success)
+                poseClassifier.close()
+                _isBadPose.update { false }
+//                updateExercise(TimeExDetectorUiState.Success)
             }
         }else{
             if (sound == "go"){
                 _inExercise.update { true }
                 _enablePoseClassifier.update { true }
+                poseClassifier.setModel(ex.value.name)
                 startCountDown()
             }
         }
@@ -265,11 +271,18 @@ class TimeExCamViewModel  (
     }
 
     fun endSet(){
-        _inExercise.update { false }
-        _enablePoseClassifier.update { false }
         stopAudioClassification()
-        alertPlayer.onPlayComplete {startAudioClassification()}
-        updateExercise(TimeExDetectorUiState.Success)
+        changeExerciseState("stop")
+        _repDone.update { repDone.value-(repDone.value % ex.value.rep) + (ex.value.rep - time.value.seconds.toInt())}
+        _time.update { Duration.ofSeconds(ex.value.rep.toLong())}
+        alertPlayer.onPlayComplete {
+            if(repDone.value >= ex.value.rep*ex.value.set){
+                finishExercise()
+            }else{
+                startAudioClassification()
+            }
+        }
+//        updateExercise(TimeExDetectorUiState.Success)
     }
     // timer end
 
@@ -284,66 +297,58 @@ class TimeExCamViewModel  (
             if (mediaImage != null) {
                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
-                poseDetector
-                    .process(inputImage)
-                    .continueWith(classificationExecutor){ task->
-                        val pose = task.result
-                        val classificationResult: List<Category> =
-                            if(enablePoseClassifier.value) // if enabled
-                                poseClassifier.classify(task.result) // classify pose
-                            else
-                                emptyList()
-                        PoseWithClassification(pose,classificationResult)
+                poseDetector?.let { detector->
+                    detector
+                        .process(inputImage)
+                        .continueWith(classificationExecutor){ task->
+                            val pose = task.result
+                            val classificationResult: List<Category> =
+                                if(enablePoseClassifier.value) // if enabled
+                                    poseClassifier.classify(task.result) // classify pose
+                                else
+                                    emptyList()
+                            PoseWithClassification(pose,classificationResult)
 
-                    }
-                    .addOnSuccessListener { results ->
+                        }
+                        .addOnSuccessListener { results ->
 
-                        var poseType1: Category? = null
-                        var poseType2: Category? = null
-                        var poseType3: Category? = null
+                            var poseType1: Category? = null
 
-                        results.classificationResult
-                            .filter { it.score > MINIMUM_CONFIDENCE_THRESHOLD } // filter list
-                            .sortedByDescending { it.score } // sort by score
-                            .let{ list ->
-                                list.firstOrNull()?.let {
-                                    poseType1 = it
-                                    if (it.label in badPose){
-                                        detectedBad()
-                                    }else{
-                                        _isBadPose.update{false}
+                            results.classificationResult
+                                .filter { it.score > MINIMUM_CONFIDENCE_THRESHOLD } // filter list
+                                .sortedByDescending { it.score } // sort by score
+                                .let{ list ->
+                                    list.firstOrNull()?.let {
+                                        poseType1 = it
+                                        if (it.label in badPose){
+                                            detectedBad()
+                                        }else{
+                                            _isBadPose.update{false}
+                                        }
                                     }
                                 }
-                                list.elementAtOrNull(1)?.let{poseType2 = it}
-                                list.elementAtOrNull(2)?.let{poseType3 = it}
+
+                            _cameraUiState.update {
+                                CameraUiState.Ready(
+                                    pose = results.pose,
+                                    poseType1 = poseType1,
+                                )
                             }
 
-                        _cameraUiState.update {
-                            CameraUiState.Ready(
-                                pose = results.pose,
-                                poseType1 = poseType1,
-                                poseType2 = poseType2,
-                                poseType3 = poseType3
-                            )
+                            imageProxy.close()
                         }
-
-                        imageProxy.close()
-                    }
-                    .addOnFailureListener { ex ->
-                        _cameraUiState.update {
-                            CameraUiState.Ready(
-                                pose = null,
-                                poseType1 = null,
-                                poseType2 = null,
-                                poseType3 = null
-                            )
+                        .addOnFailureListener { ex ->
+                            _cameraUiState.update {
+                                CameraUiState.Ready()
+                            }
+                            Log.e("analyzeImage",ex.message.toString())
+                            imageProxy.close()
                         }
-                        Log.e("analyzeImage",ex.message.toString())
-                        imageProxy.close()
-                    }
-                    .addOnCompleteListener{
-                        imageProxy.close()
-                    }
+                        .addOnCompleteListener{
+                            imageProxy.close()
+                        }
+                }
+                if(poseDetector==null) imageProxy.close()
             }
         }
     }
@@ -390,8 +395,9 @@ class TimeExCamViewModel  (
         viewModelScope.launch{
             exerciseRepositoryImpl.getExercisesByPlanStream(run.value.planId)
                 .onStart {
-                    _timeExerciseUiState.update { TimeExDetectorUiState.Saving }
+//                    alertPlayer.onPlayComplete {} // play complete sound
                     freeRes()
+                    _timeExerciseUiState.update { TimeExDetectorUiState.Saving }
                 }
                 .filterNotNull()
                 .first()
@@ -425,25 +431,29 @@ class TimeExCamViewModel  (
 
 
     fun freeRes(){
+        _cameraUiState.update { CameraUiState.Initial }
         Log.d("TIMEEXCAM VM FREE RES","VM CLEARED")
         cancelTimer()
 //        classificationExecutor.shutdownNow() //TODO()
+        poseDetector?.close()
+        poseDetector = null
         poseClassifier.close()
-        poseDetector.close()
         stopAudioClassification()
     }
 
     fun dismissPlanDoneDialog() = _timeExerciseUiState.update { TimeExDetectorUiState.PlanDone } // dismiss plan done dialog and navigate back
     fun backDialog() {
-        stopAudioClassification()
-        _inExercise.update { false }
-        _enablePoseClassifier.update { false }
-        cancelTimer()
         _cameraUiState.update { CameraUiState.Initial }
+        stopAudioClassification()
+        changeExerciseState("stop")
         _timeExerciseUiState.update { TimeExDetectorUiState.BackDialog }
     } // show back dialog
     fun confirmBackDialog() {
-        updateExercise(TimeExDetectorUiState.NavigateBack) // update exercise repdone and navigate back
+        viewModelScope.launch {
+            freeRes()
+        }.invokeOnCompletion {
+            updateExercise(TimeExDetectorUiState.NavigateBack) // update exercise repdone and navigate back
+        }
     }
     fun dismissBackDialog() {
         startAudioClassification()

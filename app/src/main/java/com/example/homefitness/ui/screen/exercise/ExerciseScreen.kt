@@ -5,12 +5,15 @@ import android.content.pm.ActivityInfo
 import android.util.Size
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -165,19 +168,19 @@ fun CameraSection(
     cameraState: CameraState,
     onAnalyzeImage: (ImageProxy) -> Unit,
 ) {
-    val context = LocalContext.current
-
     val imageAnalyzer = cameraState.rememberImageAnalyzer(
-        imageAnalysisTargetSize = ImageAnalysisTargetSize(Size(context.resources.displayMetrics.widthPixels,context.resources.displayMetrics.heightPixels)),
+        imageAnalysisBackpressureStrategy = ImageAnalysisBackpressureStrategy.KeepOnlyLatest,
+        imageAnalysisTargetSize = ImageAnalysisTargetSize(Size(256,256)),
         analyze = onAnalyzeImage)
 
     CameraPreview(
+        Modifier.fillMaxSize(),
         cameraState = cameraState,
         camSelector = CamSelector.Front,
         imageAnalyzer = imageAnalyzer,
         isFocusOnTapEnabled = false,
         isPinchToZoomEnabled = false,
-        implementationMode = ImplementationMode.Performance
+        implementationMode = ImplementationMode.Compatible
     )
 }
 

@@ -317,16 +317,12 @@ class ExerciseViewModel(
                                         _isBadPose.update{false}
                                     }
                                 }
-                                list.elementAtOrNull(1)?.let{poseType2 = it}
-                                list.elementAtOrNull(2)?.let{poseType3 = it}
                             }
 
                         _uiState.update {
                             CameraUiState.Ready(
                                 pose = results.pose,
                                 poseType1 = poseType1,
-                                poseType2 = poseType2,
-                                poseType3 = poseType3
                             )
                         }
 
@@ -334,12 +330,7 @@ class ExerciseViewModel(
                     }
                     .addOnFailureListener { ex ->
                         _uiState.update {
-                            CameraUiState.Ready(
-                                pose = null,
-                                poseType1 = null,
-                                poseType2 = null,
-                                poseType3 = null
-                            )
+                            CameraUiState.Ready()
                         }
                         Log.e("analyzeImage",ex.message.toString())
                         imageProxy.close()
@@ -503,7 +494,5 @@ sealed interface CameraUiState {
         val pose: Pose? = null,
         val throwable: Throwable? = null,
         var poseType1 : Category? = null,
-        var poseType2 : Category? = null,
-        var poseType3 : Category? = null
     ) : CameraUiState
 }

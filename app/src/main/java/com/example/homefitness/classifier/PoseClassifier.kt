@@ -13,25 +13,20 @@ class PoseClassifier(
         numThreads = CPU_NUM_THREADS
     }
 
-    var interpreter: Interpreter
+    var interpreter: Interpreter? = null
     private lateinit var labels: List<String>
     private lateinit var input: IntArray
     private lateinit var output: IntArray
+    private var exercise = "pushup"
 
     init {
-        interpreter = Interpreter(
-            FileUtil.loadMappedFile(
-                context, PushUpModel.MODEL_FILENAME
-            ), options
-        )
-
-        input = interpreter.getInputTensor(0).shape()
-        output = interpreter.getOutputTensor(0).shape()
-
         labels = FileUtil.loadLabels(context, PushUpModel.LABELS_FILENAME)
     }
 
     fun setModel (exerciseName: String){ // set model base on exercise
+        if(interpreter!=null){
+            return
+        }
         when(exerciseName){
             "pushup"->{
                 setInterpreter(PushUpModel.MODEL_FILENAME)
@@ -54,6 +49,7 @@ class PoseClassifier(
                 setLabels(PushUpModel.LABELS_FILENAME)
             }
         }
+        exercise = exerciseName
     }
 
     fun setInterpreter (file:String){
@@ -62,8 +58,10 @@ class PoseClassifier(
             context, file
         ), options
         )
-        input = interpreter.getInputTensor(0).shape()
-        output = interpreter.getOutputTensor(0).shape()
+        interpreter?.let {
+            input = it.getInputTensor(0).shape()
+            output = it.getOutputTensor(0).shape()
+        }
     }
 
     fun setLabels (file: String){
@@ -71,6 +69,9 @@ class PoseClassifier(
     }
 
     fun classify(pose: Pose?): List<Category> {
+        if (interpreter == null){
+            setModel(exercise)
+        }
 
         val inputVector = FloatArray(input[1])
         val outputTensor = FloatArray(output[1])
@@ -85,7 +86,7 @@ class PoseClassifier(
                     inputVector[index * 3 + 2] = poseLandmark.position3D.z
                 }
 
-                interpreter.run(arrayOf(inputVector), arrayOf(outputTensor)) // run inference
+                interpreter?.run(arrayOf(inputVector), arrayOf(outputTensor))
                 outputTensor.forEachIndexed { index, score ->
                     output.add(Category(labels[index], score))
                 }
@@ -97,7 +98,8 @@ class PoseClassifier(
     }
 
     override fun close() {
-        interpreter.close()
+        interpreter?.close()
+        interpreter = null
     }
 
     companion object {

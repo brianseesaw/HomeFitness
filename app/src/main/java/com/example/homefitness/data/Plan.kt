@@ -13,7 +13,7 @@ data class Plan(
     )
 
 enum class PlanState{
-    MY,DONE,RUN,EMPTY,BROWSE,NEW_RUN
+    MY,DONE,RUN,EMPTY,BROWSE,NEW_RUN,DELETED
 }
 
 //class Converters {

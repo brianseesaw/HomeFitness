@@ -325,12 +325,11 @@ fun NavHostController.navigateExercise(runId: Int, screen: Int){
         6 -> {
             route = "${TimeExCamDestination.route}?${TimeExCamDestination.runIdArg}=$runId&${TimeExCamDestination.orenArg}=${ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE}"
         }
-
     }
     val navExList = this.popBackStack(
         route = MyPlanListDestination.route,
         inclusive = false,
-        saveState = true
+        saveState = false
     )
     if(!navExList) {
         this.popBackStack(

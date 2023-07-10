@@ -78,13 +78,13 @@ fun RepExCamScreen(
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (orientation!=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED){
-                if (event == Lifecycle.Event.ON_START) {
-                    activity.requestedOrientation = orientation
-                } else if (event == Lifecycle.Event.ON_STOP) {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                }
-            }
+//            if (orientation==ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE){
+//                if (event == Lifecycle.Event.ON_START) {
+//                    activity.requestedOrientation = orientation
+//                } else if (event == Lifecycle.Event.ON_STOP) {
+//                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+//                }
+//            }
         }
 
         lifecycleOwner.lifecycle.addObserver(observer) // Add the observer to the lifecycle
@@ -121,15 +121,13 @@ fun RepExCamScreen(
             RepExDetectorUiState.Success -> {
                 DetectorScreen(
                     paddingValues = it,
-                    run = run,
                     ex = ex,
                     uiState = cameraUiState,
                     isBadPose = isBadPose,
                     onAnalyzeImage = viewModel::analyzeImage,
                     enablePoseClassifier = enablePoseClassifier,
                     rep = repCounter.count,
-                    landscape = landscape,
-                    context = context
+                    context = context,
                 )
             }
             is RepExDetectorUiState.NextExercise -> {
@@ -140,7 +138,7 @@ fun RepExCamScreen(
             }
             RepExDetectorUiState.NavigateBack -> {
                 LaunchedEffect(repExercisePoseDetectorUiState){
-                    viewModel.freeRes()
+
                     onBackToList()
                 }
             }
@@ -159,22 +157,17 @@ fun RepExCamScreen(
 @Composable
 fun DetectorScreen(
     paddingValues: PaddingValues,
-    run: ExerciseRun,
     ex: Exercise,
     uiState: CameraUiState,
     isBadPose: Boolean,
     onAnalyzeImage: (ImageProxy) -> Unit,
     enablePoseClassifier: Boolean,
     rep: Int,
-    landscape: Boolean,
     context: Context,
 ){
     when (val result: CameraUiState = uiState) {
         is CameraUiState.Ready -> {
             val cameraState = rememberCameraState()
-//            LaunchedEffect(cameraState.isStreaming){
-//
-//            }
 
             CameraSection(
                 cameraState = cameraState,

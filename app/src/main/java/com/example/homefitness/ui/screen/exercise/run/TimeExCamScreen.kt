@@ -60,6 +60,7 @@ fun TimeExCamScreen(
     val cameraUiState by viewModel.cameraUiState.collectAsState()
     val isBadPose by viewModel.isBadPose.collectAsState()
     val enablePoseClassifier by viewModel.enablePoseClassifier.collectAsState()
+    val isLandscape by viewModel.isLandscape.collectAsState()
 
     activity.requestedOrientation = orientation
 
@@ -69,13 +70,13 @@ fun TimeExCamScreen(
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (orientation!=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED){
-                if (event == Lifecycle.Event.ON_START) {
-                    activity.requestedOrientation = orientation
-                } else if (event == Lifecycle.Event.ON_STOP) {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                }
-            }
+//            if (orientation==ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE){
+//                if (event == Lifecycle.Event.ON_START) {
+//                    activity.requestedOrientation = orientation
+//                } else if (event == Lifecycle.Event.ON_STOP) {
+//                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+//                }
+//            }
         }
 
         lifecycleOwner.lifecycle.addObserver(observer) // Add the observer to the lifecycle
